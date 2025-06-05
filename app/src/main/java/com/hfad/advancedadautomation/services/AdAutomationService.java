@@ -60,7 +60,7 @@ public class AdAutomationService extends AccessibilityService {
     private boolean isRecovering = false;
     private static final String PREFS_NAME = "AutomationPrefs";
     private static final String LAST_FREE_PACKAGE_TIME = "lastFreePackageTime";
-    private static final long FOUR_HOURS = (4 * 60 * 60 * 1000) + (30 * 1000);
+    private static final long FOUR_HOURS = 4 * 60 * 60 * 1000;
     public static final String ACTION_RESET_FREE_PACKAGE = "com.hfad.advancedadautomation.RESET_FREE_PACKAGE";
     public static final String EXTRA_REMAINING_TIME = "remainingTime";
     private static final String USE_CUSTOM_DELAY = "useCustomDelay";
@@ -76,7 +76,7 @@ public class AdAutomationService extends AccessibilityService {
     private volatile boolean redirectDetected = false;
     private int adNotDetectedCount = 0;
 
-    private List<Handler> handlersList = new ArrayList<>();
+    private final List<Handler> handlersList = new ArrayList<>();
     private Handler adWatcherHandler;
     private Runnable adWatcherRunnable;
     private ScheduledFuture<?> automationFuture;
@@ -98,9 +98,15 @@ public class AdAutomationService extends AccessibilityService {
 
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) {
-                tts.setLanguage(Locale.US);
-                isTtsInitialized = true;
-                Log.d(TAG, "TTS initialized successfully.");
+                Locale arabic = new Locale("ar");
+                int result = tts.setLanguage(arabic);
+
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Log.e(TAG, "Arabic language is not supported or missing.");
+                } else {
+                    isTtsInitialized = true;
+                    Log.d(TAG, "TTS initialized with Arabic.");
+                }
             } else {
                 Log.e(TAG, "Failed to initialize TTS.");
             }
@@ -115,7 +121,7 @@ public class AdAutomationService extends AccessibilityService {
                 if (intent != null) {
                     if (ACTION_STOP.equals(intent.getAction())) {
                         Log.d(TAG, "Received broadcast to stop automation.");
-                        speak("Stopping service now", "STOP_NOW");
+                        speak("إيقاف الخدمة الآن", "STOP_NOW");
                         stopServiceLogic();
                     } else if (ACTION_START.equals(intent.getAction())) {
                         handleStartAction(intent);
@@ -351,7 +357,7 @@ public class AdAutomationService extends AccessibilityService {
                         " | Inactivity: " + inactivityMinutes + " min " + inactivitySeconds + " sec.");
 
                 if (inactivityDuration > WATCHDOG_INTERVAL_MILLIS) {
-                    speak("Service inactive for too long. Attempting recovery.", "INACTIVE_RECOVERY");
+                    speak("الخدمة غير نشطة منذ وقت طويل. جاري محاولة الاستعادة.", "INACTIVE_RECOVERY");
 
                     Log.w(TAG, "Inactivity > " + (WATCHDOG_INTERVAL_MILLIS / 60000) +
                             " min — attempting unlock + recovery...");
@@ -398,23 +404,24 @@ public class AdAutomationService extends AccessibilityService {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
                     long startTime = System.currentTimeMillis();
-                    long workDuration = getRandomDelay(28 * 60 * 1000, 32 * 60 * 1000);
+                    long workDuration = getRandomDelay(30 * 60 * 1000, 31 * 60 * 1000);
                     acquireWakeLock(workDuration);
 
                     long endTime = startTime + workDuration;
 
                     Log.d(TAG, "Starting automation - " + (workDuration / 1000 / 60) + " minutes.");
                     startActivity(intent);
-                    Thread.sleep(getRandomDelay(6000, 8000));
-                    speak("Starting automation for " + (workDuration / 60000) + " minutes", "START");
+                    Thread.sleep(5000);
+                    speak("بدء التشغيل التلقائي لمدة " + (workDuration / 60000) + " دقيقة", "START");
+                    Thread.sleep(5000);
                     while (isRunning && System.currentTimeMillis() < endTime) {
                         automateAds();  // Automatiser les publicités
                     }
 
-                    long breakDuration = getRandomDelay(4 * 60 * 1000, 6 * 60 * 1000);
+                    long breakDuration = getRandomDelay(4 * 60 * 1000, 5 * 60 * 1000);
                     Log.d(TAG, "Pausing - " + (breakDuration / 1000 / 60) + " minutes.");
 
-                    speak("Stopping automation. Pausing for " + (breakDuration / 60000) + " minutes", "STOP");
+                    speak("إيقاف التشغيل التلقائي. التوقف لمدة " + (breakDuration / 60000) + " دقائق", "STOP");
                     stopAutomation();
                     releaseWakeLock();
 
@@ -470,7 +477,7 @@ public class AdAutomationService extends AccessibilityService {
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     private void continueAfterPause(ScheduledExecutorService executorService) {
         Log.d(TAG, "Pause completed, closing the game!");
-        speak("Restarting automation", "RESTART");
+        speak("إعادة تشغيل الخدمة", "RESTART");
         forceCloseGameAndReturn();
         Log.d(TAG, "Restarting!");
         startAutomationCycle(executorService);
@@ -492,13 +499,10 @@ public class AdAutomationService extends AccessibilityService {
 
         openAdWithRetry();
         if (isInAdActivity()) {
-            Thread.sleep(getRandomDelay(5000, 6000));
-            Log.d(TAG, "Ad successfully closed, waiting to return to the game...");
-            final OpenAdResult[] openAdResultHolder = new OpenAdResult[1];  // Pour stocker le résultat
+            Thread.sleep(250);
+            final OpenAdResult[] openAdResultHolder = new OpenAdResult[1];
 
-            adInteractionThread = new Thread(() -> {
-                openAdResultHolder[0] = simulateAdInteractionAndClose();
-            });
+            adInteractionThread = new Thread(() -> openAdResultHolder[0] = simulateAdInteractionAndClose());
             adInteractionThread.start();
 
             try {
@@ -508,13 +512,13 @@ public class AdAutomationService extends AccessibilityService {
                 Thread.currentThread().interrupt();
             }
 
-            Thread.sleep(getRandomDelay(1000, 1200));
-
             OpenAdResult openAdResult = openAdResultHolder[0];
             if (openAdResult == OpenAdResult.SUCCESS) {
                 launchApp("com.firsttouchgames.smp", "com.firsttouchgames.smp.MainActivity", "Returning to the game...");
+                Thread.sleep(500);
             }
         }
+
         try {
             recoveryLatch.await();
             Log.d(TAG, "Recovery complete — continuing automation.");
@@ -522,18 +526,19 @@ public class AdAutomationService extends AccessibilityService {
             Log.w(TAG, "Interrupted while waiting for recovery to finish.");
             Thread.currentThread().interrupt();
         } finally {
-            Thread.sleep(getRandomDelay(1000, 1200));
+            Thread.sleep(500);
         }
 
         Log.d(TAG, "Click: rewards (540,1350)");
-        for (int i = 0; i < 11; i++) {
+        for (int i = 0; i < 25; i++) {
             performClick(540, 1350);
-            Thread.sleep(getRandomDelay(300, 400));
+            Thread.sleep(120);
         }
+        // Thread.sleep(500);
 
         Log.d(TAG, "Click: close reward (1000,2300)");
         performClick(1000, 2210);
-        Thread.sleep(getRandomDelay(1000, 1500));
+        Thread.sleep(250);
 
         Log.d(TAG, "Click: dismiss offers (1,1)");
         performClick(1, 1);
@@ -545,14 +550,13 @@ public class AdAutomationService extends AccessibilityService {
         }
 
         Log.d(TAG, "Resetting the automation, waiting 2 seconds before restarting...");
-        Thread.sleep(getRandomDelay(1000, 1500));
+        Thread.sleep(200);
     }
 
     private OpenAdResult simulateAdInteractionAndClose() {
         AccessibilityNodeInfo rootNode = getRootInActiveWindow();
         if (rootNode == null) {
             Log.w(TAG, "No root node available. Returning to the game...");
-            switchBackToGame();
             return OpenAdResult.SUCCESS;
         }
 
@@ -561,25 +565,27 @@ public class AdAutomationService extends AccessibilityService {
 
         if (clickableNodes.isEmpty()) {
             Log.w(TAG, "No clickable node found. Returning to the game...");
-            switchBackToGame();
             return OpenAdResult.SUCCESS;
         }
 
-        for (AccessibilityNodeInfo node : clickableNodes) {
-            CharSequence text = node.getText();
-            CharSequence desc = node.getContentDescription();
-            // Log.d(TAG, "Node info - Text: " + (text != null ? text : "null") + ", Description: " + (desc != null ? desc : "null"));
+        Log.w(TAG, "clickableNodes.size() = " + clickableNodes.size());
 
-            if ((text != null && text.length() == 0) && (desc == null)) {
-                Rect bounds = new Rect();
-                node.getBoundsInScreen(bounds);
-                performClick(bounds.centerX(), bounds.centerY());
-                // Log.d(TAG, "Close button clicked at coordinates : " + bounds.centerX() + "," + bounds.centerY());
-                return OpenAdResult.CLOSE_BUTTON_CLICKED;
+        if (clickableNodes.size() == 1) {
+            performClick(900, 2300);
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return OpenAdResult.FORCE_CLOSE_AND_RESTART;
             }
+            if (redirectDetected || Thread.currentThread().isInterrupted()) {
+                Log.w(TAG, "Redirection or interruption detected after first click.");
+                return OpenAdResult.FORCE_CLOSE_AND_RESTART;
+            }
+            return OpenAdResult.SUCCESS;
         }
 
-        int maxClicks = Math.min(6, clickableNodes.size());
+        int maxClicks = Math.min(3, clickableNodes.size());
         boolean clicked = false;
 
         for (int i = 0; i < maxClicks; i++) {
@@ -601,26 +607,81 @@ public class AdAutomationService extends AccessibilityService {
             clicked = true;
 
             try {
-                Thread.sleep(getRandomDelay(500, 1000));
+                Thread.sleep(getRandomDelay(500, 600));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return OpenAdResult.FORCE_CLOSE_AND_RESTART;
             }
 
             if (redirectDetected || Thread.currentThread().isInterrupted()) {
-                Log.w(TAG, "Redirection or interruption detected, stopping clicks.");
+                Log.w(TAG, "Redirection or interruption detected after click.");
                 return OpenAdResult.FORCE_CLOSE_AND_RESTART;
             }
         }
 
-
         if (clicked && !redirectDetected) {
             Log.d(TAG, "Ad successfully closed, returning to the game...");
-            switchBackToGame();
             return OpenAdResult.SUCCESS;
         }
         return OpenAdResult.SUCCESS;
     }
+
+/*
+    private OpenAdResult simulateAdInteractionAndClose() {
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode == null) {
+            Log.w(TAG, "No root node available. Returning to the game...");
+            switchBackToGame();
+            return OpenAdResult.SUCCESS;
+        }
+
+        List<AccessibilityNodeInfo> clickableNodes = new ArrayList<>();
+        findAllClickableNodes(rootNode, clickableNodes);
+
+        if (clickableNodes.isEmpty()) {
+            Log.w(TAG, "No clickable node found. Returning to the game...");
+            switchBackToGame();
+            return OpenAdResult.SUCCESS;
+        }
+
+        // Filtrer les nodes valides (hors "Privacy")
+        List<AccessibilityNodeInfo> validNodes = new ArrayList<>();
+        for (AccessibilityNodeInfo node : clickableNodes) {
+            CharSequence text = node.getText();
+            if (text != null && text.toString().equalsIgnoreCase("Privacy")) {
+                continue;
+            }
+            validNodes.add(node);
+        }
+
+        if (validNodes.isEmpty()) {
+            Log.w(TAG, "No valid clickable node (excluding Privacy).");
+            switchBackToGame();
+            return OpenAdResult.SUCCESS;
+        }
+
+        // Sélection aléatoire d'un seul node
+        AccessibilityNodeInfo randomNode = validNodes.get(new Random().nextInt(validNodes.size()));
+        Rect bounds = new Rect();
+        randomNode.getBoundsInScreen(bounds);
+        performClick(bounds.centerX(), bounds.centerY());
+
+        try {
+            Thread.sleep(getRandomDelay(500, 1000));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return OpenAdResult.FORCE_CLOSE_AND_RESTART;
+        }
+
+        if (redirectDetected || Thread.currentThread().isInterrupted()) {
+            Log.w(TAG, "Redirection or interruption detected after click.");
+            return OpenAdResult.FORCE_CLOSE_AND_RESTART;
+        }
+
+        Log.d(TAG, "Random clickable node clicked.");
+        return OpenAdResult.SUCCESS;
+    }
+*/
 
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
     private OpenAdResult openAdWithRetry() throws InterruptedException  {
@@ -630,9 +691,10 @@ public class AdAutomationService extends AccessibilityService {
             Log.e(TAG, "Click: open Ad (360, 1800)");
             performClick(360, 1800);
 
-            for (int i = 0; i < 10; i++) {
-                Thread.sleep(getRandomDelay(200, 300));
+            for (int i = 0; i < 18; i++) {
+                Thread.sleep(30);
                 if (isInAdActivity()) {
+                    Log.d(TAG, "isInAdActivity i = " + i);
                     adStarted = true;
                     adNotDetectedCount = 0;
                     break;
@@ -654,15 +716,15 @@ public class AdAutomationService extends AccessibilityService {
 
                 Log.d(TAG, "Ad not detected after attempt, performing a refresh.");
                 performClick(1000, 2210);
-                Thread.sleep(getRandomDelay(1000, 1200));
+                Thread.sleep(100);
                 performClick(120, 2250);
-                Thread.sleep(getRandomDelay(1000, 1200));
+                Thread.sleep(400);
                 performClick(120, 2250);
-                Thread.sleep(getRandomDelay(1000, 1200));
+                Thread.sleep(150);
 
-                if (adNotDetectedCount >= 5) {
-                    Log.w(TAG, "5 consecutive failures to detect an ad → restarting the service.");
-                    speak("No advertisement detected for too long. Restarting the service.", "AD_DETECTION_FAILURE");
+                if (adNotDetectedCount >= 8) {
+                    Log.w(TAG, "8 consecutive failures to detect an ad → restarting the service.");
+                    speak("لم يتم اكتشاف أي إعلان منذ وقت طويل. يتم الآن إعادة تشغيل الخدمة.", "AD_DETECTION_FAILURE");
                     adNotDetectedCount = 0;
                     restartService();
                 }
@@ -816,7 +878,7 @@ public class AdAutomationService extends AccessibilityService {
     @TargetApi(Build.VERSION_CODES.N)
     private void performClick(int x, int y) {
         int xOffset = random.nextInt(10) - 5; // Variation de -5 à +5 pixels
-        int yOffset = random.nextInt(10) - 5; // Variation de -5 à +5 pixels
+        int yOffset = random.nextInt(10) - 5;
 
         int adjustedX = x + xOffset;
         int adjustedY = y + yOffset;
@@ -830,7 +892,7 @@ public class AdAutomationService extends AccessibilityService {
         GestureDescription.Builder builder = new GestureDescription.Builder();
         Path path = new Path();
         path.moveTo(adjustedX, adjustedY);
-        builder.addStroke(new GestureDescription.StrokeDescription(path, 0, 100));
+        builder.addStroke(new GestureDescription.StrokeDescription(path, 0, 60));
         dispatchGesture(builder.build(), null, null);
     }
 
@@ -971,7 +1033,7 @@ public class AdAutomationService extends AccessibilityService {
 
         try {
             launchApp("com.hfad.advancedadautomation", "com.hfad.advancedadautomation.MainActivity", "Returning to automation app...");
-            Thread.sleep(getRandomDelay(1000, 1500));
+            Thread.sleep(1000);
             launchApp("com.firsttouchgames.smp", "com.firsttouchgames.smp.MainActivity", "Back in game!");
         } catch (InterruptedException e) {
             Log.e(TAG, "Thread interrompu dans switchBackToGame()");
@@ -1043,11 +1105,11 @@ public class AdAutomationService extends AccessibilityService {
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, previousVolume, 0);
                 Log.d(TAG, "Media volume restored to " + previousVolume);
             } else {
-                // Si le volume précédent est 0, on définit le volume à 35%
+                // Si le volume précédent est 0, on définit le volume à 40%
                 int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                int volumeToSet = (int) (maxVolume * 0.35);  // 35% du volume max
+                int volumeToSet = (int) (maxVolume * 0.30);  // 40% du volume max
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volumeToSet, 0);
-                Log.d(TAG, "Media volume set to 35% of max.");
+                Log.d(TAG, "Media volume set to 40% of max.");
             }
             previousVolume = -1;  // Réinitialise après l'utilisation
         }
